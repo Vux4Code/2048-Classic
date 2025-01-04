@@ -58,24 +58,48 @@ back2_rect = back2_surf. get_rect (topleft = (0, title_rect. bottom))
 
 screen = pygame. display. set_mode (board_rect. bottomright)
 
+def get_pos (pos) :
+    return ((board_rect.left + 1 * scale_factor * (pos[0] + 1) + blocks[0].get_width() * pos[0]),
+            (board_rect.top + 1 * scale_factor * (pos[1] + 1) + blocks[0].get_height() * pos[1]))
+
+def rotate_cell (pos) :
+    return (board_size - 1 - pos [1], pos [0])
+
 class Cell () :
     def __init__ (self) :
         super (). __init__ ()
         self. type = 0
         self. merge = False
         self. move = False
+        self. moving = 0
     def print (self, pos) :
-        new_pos = ((board_rect. left + 1 * scale_factor * (pos [0] + 1) + blocks [0]. get_width  () * pos [0]),
-                   (board_rect. top  + 1 * scale_factor * (pos [1] + 1) + blocks [0]. get_height () * pos [1]))
-        screen. blit (blocks [self. type], new_pos)
+        screen. blit (blocks [self. type], get_pos (pos))
+cells = [[Cell () for i in range (board_size)] for j in range (board_size)]
+
+num_frame = 3
+class Move () :
+    def __init__ (self, st, en, type) :
+        super (). __init__ ()
+        self. start = st
+        self. end = en
+        self. type = type
+        self. frame = 0
+    def print (self) :
+        st_pos = get_pos (self. start)
+        en_pos = get_pos (self. end)
+        pos = ((en_pos [0] * self. frame + st_pos [0] * (num_frame - self. frame)) / num_frame,
+               (en_pos [1] * self. frame + st_pos [1] * (num_frame - self. frame)) / num_frame)
+        self. frame += 1
+        screen. blit (blocks [self. type], pos)
+def rotate_move (pos) :
+    return Move(rotate_cell(pos.start), rotate_cell(pos.end), pos.type)
+moves = []
 
 pygame. display. set_caption ('Classic 2048 by Vux2Code')
 pygame. display. set_icon (pygame. image. load ('Image/icon.png'). convert_alpha())
 
 score_text_size = 40
 score_text_font = pygame. font. Font ('Font/Pixeltype.ttf', score_text_size)
-
-cells = [[Cell () for i in range (board_size)] for j in range (board_size)]
 
 def print_score () :
     pos_score_text = font. render (f'Score : {pos_score}', False, 'black')
@@ -101,23 +125,25 @@ def spawn_cell () :
     else : cells [empty_cell [new_cell] [0]] [empty_cell [new_cell] [1]]. type = 1
 
 def reset () :
-    global cells, game_active, pos_score
+    global cells, game_active, pos_score, moves
     cells = [[Cell() for i in range(board_size)] for j in range(board_size)]
+    moves = []
     game_active = True
     pos_score = 0
     spawn_cell ();
     spawn_cell ();
 
 def rotate_clockwise () :
-    global cells
+    global cells, moves
     new_cells = [[Cell() for i in range(board_size)] for j in range(board_size)]
     for i in range (board_size) :
         for j in range (board_size) :
             new_cells [i] [j] = cells [j] [board_size - 1 - i]
     cells = new_cells
+    moves = [rotate_move(i) for i in moves]
 
 def up () :
-    global cells, pos_score, max_score
+    global cells, pos_score, max_score, moves
     for i in range (board_size) :
         for j in range (board_size) :
             cells [i] [j]. merge = False
@@ -132,10 +158,15 @@ def up () :
                 cells [i] [pos - 1], cells [i] [pos] = cells [i] [pos], cells [i] [pos - 1]
                 pos -= 1
             if pos > 0 and cells [i] [pos - 1]. type == cells [i] [pos]. type and cells [i] [pos - 1]. merge == False :
+                cells [i] [pos - 1]. moving += 1
+                moves. append (Move ((i, j), (i, pos - 1), cells [i] [pos]. type))
                 cells [i] [pos - 1]. type += 1
                 cells [i] [pos - 1]. merge = True
                 cells [i] [pos] = Cell ()
                 pos_score += pow (2, cells [i] [pos - 1]. type)
+            else :
+                cells [i] [pos]. moving += 1
+                moves. append (Move((i, j), (i, pos), cells [i] [pos]. type))
     max_score = max (max_score, pos_score)
 
 def left () :
@@ -169,12 +200,12 @@ def check_diff () :
                 diff = True
     return diff
 
-def update () :
+def update_after_key () :
     if check_diff() :
         spawn_cell()
 
-def check_game_active () :
-    global game_active, win
+def update_after_frame () :
+    global game_active, win, moves
     game_active = False
     win = False
     for i in range (board_size) :
@@ -183,6 +214,10 @@ def check_game_active () :
             if cells [i] [j]. type == 0 : game_active = True
             if j + 1 < board_size and cells [i] [j]. type == cells [i] [j + 1]. type : game_active = True
             if i + 1 < board_size and cells [i] [j]. type == cells [i + 1] [j]. type : game_active = True
+    while len (moves) > 0 and moves [0]. frame == num_frame :
+        cells [moves [0]. end [0]] [moves [0]. end [1]]. moving -= 1
+        moves. pop (0)
+
 
 def save_data () :
     with open (file_data, 'w') as file :
@@ -201,24 +236,26 @@ while True:
             elif event.type == pygame. KEYDOWN :
                 if event.key == pygame.K_w or event.key == pygame.K_UP:
                     up()
-                    update()
+                    update_after_key()
                 elif event.key == pygame.K_a or event.key == pygame.K_LEFT:
                     left()
-                    update()
+                    update_after_key()
                 elif event.key == pygame.K_s or event.key == pygame.K_DOWN:
                     down()
-                    update()
+                    update_after_key()
                 elif event.key == pygame.K_d or event.key == pygame.K_RIGHT:
                     right()
-                    update()
+                    update_after_key()
         screen. fill ('white')
         screen. blit (title_surf, title_rect)
         screen. blit (board_surf, board_rect)
         print_score()
         for i in range (board_size) :
             for j in range (board_size) :
+                if cells [i] [j]. type == 0 or cells [i] [j]. moving > 0: continue
                 cells [i] [j]. print ((i, j))
-        check_game_active()
+        for i in range (len (moves)) : moves [i] . print ()
+        update_after_frame()
     else :
         for event in pygame. event. get () :
             if event. type == pygame. QUIT :
