@@ -72,28 +72,44 @@ class Cell () :
         self. merge = False
         self. move = False
         self. moving = 0
+        self. spawned = False
     def print (self, pos) :
         screen. blit (blocks [self. type], get_pos (pos))
 cells = [[Cell () for i in range (board_size)] for j in range (board_size)]
 
-num_frame = 3
+moving_frame = 4
 class Move () :
     def __init__ (self, st, en, type) :
         super (). __init__ ()
         self. start = st
         self. end = en
         self. type = type
-        self. frame = 0
+        self. frame = 1
     def print (self) :
         st_pos = get_pos (self. start)
         en_pos = get_pos (self. end)
-        pos = ((en_pos [0] * self. frame + st_pos [0] * (num_frame - self. frame)) / num_frame,
-               (en_pos [1] * self. frame + st_pos [1] * (num_frame - self. frame)) / num_frame)
+        pos = ((en_pos [0] * self. frame + st_pos [0] * (moving_frame - self. frame)) / moving_frame,
+               (en_pos [1] * self. frame + st_pos [1] * (moving_frame - self. frame)) / moving_frame)
         self. frame += 1
         screen. blit (blocks [self. type], pos)
 def rotate_move (pos) :
     return Move(rotate_cell(pos.start), rotate_cell(pos.end), pos.type)
 moves = []
+
+spawn_frame = 5
+class Spawn () :
+    def __init__ (self, pos) :  
+        super (). __init__ ()
+        self. pos = pos
+        self. frame = 1
+    def print (self) :
+        new_sur = blocks [cells [self. pos [0]] [self. pos [1]]. type]
+        new_sur = pygame. transform. scale (new_sur, (new_sur. get_width() * self. frame / spawn_frame, new_sur. get_height () * self. frame / spawn_frame))
+        old_rect = blocks [0]. get_rect (topleft = get_pos (self. pos))
+        new_rect = new_sur. get_rect (center = old_rect. center)
+        screen. blit (new_sur, new_rect)
+        self. frame += 1
+spawning = []
 
 pygame. display. set_caption ('Classic 2048 by Vux2Code')
 pygame. display. set_icon (pygame. image. load ('Image/icon.png'). convert_alpha())
@@ -112,7 +128,7 @@ def print_score () :
     screen. blit (max_score_text, max_score_rect)
 
 def spawn_cell () :
-    global cells
+    global cells, spawning
     empty_cell = []
     for i in range (board_size) :
         for j in range (board_size) :
@@ -121,13 +137,18 @@ def spawn_cell () :
     if len (empty_cell) == 0 : return
     new_cell = random. randrange (0, len (empty_cell))
     new_cell_type = random. randrange (0, 10)
-    if new_cell_type == 0 : cells [empty_cell [new_cell] [0]] [empty_cell [new_cell] [1]]. type = 2
-    else : cells [empty_cell [new_cell] [0]] [empty_cell [new_cell] [1]]. type = 1
+    if new_cell_type == 0 :
+        cells [empty_cell [new_cell] [0]] [empty_cell [new_cell] [1]]. type = 2
+    else :
+        cells [empty_cell [new_cell] [0]] [empty_cell [new_cell] [1]]. type = 1
+    spawning. append (Spawn (tuple((empty_cell [new_cell] [0], empty_cell [new_cell] [1]))))
+
 
 def reset () :
-    global cells, game_active, pos_score, moves
+    global cells, game_active, pos_score, moves, spawning
     cells = [[Cell() for i in range(board_size)] for j in range(board_size)]
     moves = []
+    spawning = []
     game_active = True
     pos_score = 0
     spawn_cell ();
@@ -205,7 +226,7 @@ def update_after_key () :
         spawn_cell()
 
 def update_after_frame () :
-    global game_active, win, moves
+    global game_active, win, moves, spawning
     game_active = False
     win = False
     for i in range (board_size) :
@@ -214,9 +235,12 @@ def update_after_frame () :
             if cells [i] [j]. type == 0 : game_active = True
             if j + 1 < board_size and cells [i] [j]. type == cells [i] [j + 1]. type : game_active = True
             if i + 1 < board_size and cells [i] [j]. type == cells [i + 1] [j]. type : game_active = True
-    while len (moves) > 0 and moves [0]. frame == num_frame :
+    while len (moves) > 0 and moves [0]. frame == moving_frame :
         cells [moves [0]. end [0]] [moves [0]. end [1]]. moving -= 1
         moves. pop (0)
+    while len (spawning) > 0 and spawning [0]. frame == spawn_frame :
+        cells [spawning [0]. pos [0]] [spawning [0]. pos [1]]. spawned = True
+        spawning. pop (0)
 
 
 def save_data () :
@@ -252,9 +276,10 @@ while True:
         print_score()
         for i in range (board_size) :
             for j in range (board_size) :
-                if cells [i] [j]. type == 0 or cells [i] [j]. moving > 0: continue
+                if cells [i] [j]. type == 0 or cells [i] [j]. moving > 0 or cells [i] [j]. spawned == False: continue
                 cells [i] [j]. print ((i, j))
         for i in range (len (moves)) : moves [i] . print ()
+        for i in range (len (spawning)) : spawning [i]. print ()
         update_after_frame()
     else :
         for event in pygame. event. get () :
